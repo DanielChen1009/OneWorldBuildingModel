@@ -64,12 +64,11 @@ def get_loaders(
 
 
 def check_accuracy(loader, model, folder="saved_images/", device="cuda"):
+    model.eval()
     print("=> Checking Accuracy")
     num_correct = 0
     num_pixels = 0
-    model.eval()
     sum_score = 0
-    num_zeros = 0
     ind = 0
 
     with torch.no_grad():
@@ -79,24 +78,26 @@ def check_accuracy(loader, model, folder="saved_images/", device="cuda"):
             preds = model(x)
             soft_max = nn.Softmax(dim=1)
             single_dim_preds = soft_max(preds)
-            single_dim_preds = torch.argmax(single_dim_preds, dim=1)
-            num_correct += (single_dim_preds == y).sum()
-            num_zeros += (single_dim_preds == torch.zeros(single_dim_preds.size()).float()).sum()
+            single_dim_preds = torch.argmax(single_dim_preds, dim=1).float()
+
+            num_correct += torch.eq(single_dim_preds, y).long().sum()
             num_pixels += torch.numel(single_dim_preds)
             print(ind, end=' ')
-            sum_score += dice(preds, y.int()).item()
+            sum_score += dice(preds, y.int(), ignore_index=0).item()
+
+            single_dim_preds = single_dim_preds.to('cpu')
+            y = y.to('cpu')
+
             torchvision.utils.save_image(
                 torch.div(single_dim_preds, 4).unsqueeze(1), f"{folder}pred_{ind}.png"
             )
             torchvision.utils.save_image(torch.div(y.unsqueeze(1), 4), f"{folder}{ind}.png")
             ind += 1
         print()
-    num_correct -= num_zeros
-    num_pixels -= num_zeros
     print(
         f"Got {num_correct}/{num_pixels} with acc {num_correct/num_pixels*100:.2f}"
     )
-    print(f"Dice score: {sum_score/len(loader)}")
+    print(f"Average dice score: {sum_score/len(loader)}")
     model.train()
 
 

@@ -17,22 +17,21 @@ from utils import (
 
 # Hyperparameters etc.
 # Perhaps change learning rate...
-LEARNING_RATE = 5e-6
-# if not torch.backends.mps.is_available():
-#     if not torch.backends.mps.is_built():
-#         print("MPS not available because the current PyTorch install was not "
-#               "built with MPS enabled.")
-#     else:
-#         print("MPS not available because the current MacOS version is not 12.3+ "
-#               "and/or you do not have an MPS-enabled device on this machine.")
-#     DEVICE = "cpu"
-#
-# else:
-#     DEVICE = torch.device("mps")
-DEVICE = torch.device('cpu')
+LEARNING_RATE = 1e-4
+if not torch.backends.mps.is_available():
+    if not torch.backends.mps.is_built():
+        print("MPS not available because the current PyTorch install was not "
+              "built with MPS enabled.")
+    else:
+        print("MPS not available because the current MacOS version is not 12.3+ "
+              "and/or you do not have an MPS-enabled device on this machine.")
+    DEVICE = torch.device("cpu")
+
+else:
+    DEVICE = torch.device("mps")
 BATCH_SIZE = 16
-NUM_EPOCHS = 3
-NUM_WORKERS = 2
+NUM_EPOCHS = 10
+NUM_WORKERS = 1
 IMAGE_HEIGHT = 240  # 3000 originally
 IMAGE_WIDTH = 320  # 4000 originally
 PIN_MEMORY = True
@@ -48,7 +47,7 @@ def train_fn(loader, model, optimizer, loss_fn, scaler, loss_sum):
     loop = tqdm(loader)
     for batch_idx, (data, targets) in enumerate(loop):
         data = data.to(device=DEVICE)
-        targets = targets.float().to(device=DEVICE)
+        targets = targets.to(device=DEVICE)
 
         # forward
         predictions = model(data)
@@ -56,14 +55,16 @@ def train_fn(loader, model, optimizer, loss_fn, scaler, loss_sum):
 
         # backward
         optimizer.zero_grad()
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
+        loss.backward()
+        optimizer.step()
+        # scaler.scale(loss).backward()
+        # scaler.step(optimizer)
+        # scaler.update()
 
         # update tqdm loop
         loss_sum += loss.item()
         loop.set_postfix(loss=(loss_sum/(batch_idx + 1)))
-    print(loss_sum / 225)
+    print(loss_sum / 125)
 
 
 def main():
@@ -95,8 +96,9 @@ def main():
     )
 
     model = AttentionUNET(in_channels=3, out_channels=5).to(device=DEVICE)
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.CrossEntropyLoss().to(device=DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer.load_state_dict(torch.load("checkpoint_CrossEnt.pth.tar", map_location='cpu')["optimizer"])
 
     train_loader, val_loader = get_loaders(
         TRAIN_IMG_DIR,
@@ -121,6 +123,7 @@ def main():
     # )
 
     for epoch in range(NUM_EPOCHS):
+        print(optimizer.param_groups[-1]['lr'])
         train_fn(train_loader, model, optimizer, loss_fn, scaler, 0)
 
         # save model
