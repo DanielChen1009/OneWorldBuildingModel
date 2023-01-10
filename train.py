@@ -1,5 +1,6 @@
 import gc
 
+import cv2
 import torch
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
@@ -30,10 +31,11 @@ if not torch.backends.mps.is_available():
 else:
     DEVICE = torch.device("mps")
 BATCH_SIZE = 16
-NUM_EPOCHS = 10
+NUM_EPOCHS = 20
 NUM_WORKERS = 1
 IMAGE_HEIGHT = 240  # 3000 originally
 IMAGE_WIDTH = 320  # 4000 originally
+INTERPOLATION_TYPE = cv2.INTER_AREA
 PIN_MEMORY = True
 LOAD_MODEL = True
 TRAIN_IMG_DIR = "data/train/train-org-img"
@@ -70,7 +72,7 @@ def train_fn(loader, model, optimizer, loss_fn, scaler, loss_sum):
 def main():
     train_transform = A.Compose(
         [
-            A.Resize(height=IMAGE_HEIGHT, width=IMAGE_WIDTH),
+            A.Resize(height=IMAGE_HEIGHT, width=IMAGE_WIDTH, interpolation=INTERPOLATION_TYPE),
             A.Rotate(limit=35, p=1.0),
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.1),
@@ -85,7 +87,7 @@ def main():
 
     val_transforms = A.Compose(
         [
-            A.Resize(height=IMAGE_HEIGHT, width=IMAGE_WIDTH),
+            A.Resize(height=IMAGE_HEIGHT, width=IMAGE_WIDTH, interpolation=INTERPOLATION_TYPE),
             A.Normalize(
                 mean=[0.0, 0.0, 0.0],
                 std=[1.0, 1.0, 1.0],

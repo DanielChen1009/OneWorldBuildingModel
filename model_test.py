@@ -1,3 +1,5 @@
+import cv2
+
 from model import AttentionUNET
 import torch
 from utils import (
@@ -12,8 +14,10 @@ from PIL import Image
 import numpy as np
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import torch.nn as nn
 
-IMAGE_ID = 11024
+IMAGE_ID = 11290
+interpol = cv2.INTER_AREA
 
 
 def main():
@@ -25,7 +29,7 @@ def main():
     # print("=> Mask Saved")
     train_transform = A.Compose(
         [
-            A.Resize(height=240, width=320),
+            A.Resize(height=240, width=320, interpolation=interpol),
             A.Normalize(
                 mean=[0.0, 0.0, 0.0],
                 std=[1.0, 1.0, 1.0],
@@ -45,37 +49,37 @@ def main():
     not4 = mask != 4.0
     not5 = mask != 5.0
     not6 = mask != 6.0
-    finalbool = np.logical_and(np.logical_and(not3, not4), np.logical_and(not5, not6))
-    mask[finalbool] = 0.0
+    mask[not3 & not4 & not5 & not6] = 0.0
     mask[mask == 3.0] = 1.0
     mask[mask == 4.0] = 2.0
     mask[mask == 5.0] = 3.0
     mask[mask == 6.0] = 4.0
     mask = mask / 4
-
+    print(mask.unsqueeze(0).size())
+    mask = mask.unsqueeze(0)
+    mask = torchvision.transforms.Resize((3000, 4000), interpolation=torchvision.transforms.InterpolationMode.NEAREST)(mask)
     torchvision.utils.save_image(
         mask, "testing/mask.png"
     )
+    torchvision.utils.save_image(
+        image, 'testing/testing.png'
+    )
 
-    model = AttentionUNET(in_channels=3, out_channels=1)
-    load_checkpoint(torch.load("my_checkpoint.pth.tar"), model)
+    model = AttentionUNET(in_channels=3, out_channels=5)
+    load_checkpoint(torch.load("checkpoint_CrossEnt.pth.tar")['state_dict'], model)
+    model.eval()
     with torch.no_grad():
         pred = torch.sigmoid(model(image.unsqueeze(0)))
-        pred = torch.where(np.logical_and(pred >= 0, pred < 0.2), torch.mul(torch.ones(pred.size()), 0),
-                           pred)
-        pred = torch.where(np.logical_and(pred >= 0.2, pred < 0.4), torch.mul(torch.ones(pred.size()), 0.25),
-                           pred)
-        pred = torch.where(np.logical_and(pred >= 0.4, pred < 0.6), torch.mul(torch.ones(pred.size()), 0.5),
-                           pred)
-        pred = torch.where(np.logical_and(pred >= 0.6, pred < 0.8), torch.mul(torch.ones(pred.size()), 0.75),
-                           pred)
-        pred = torch.where(np.logical_and(pred >= 0.8, pred <= 1), torch.mul(torch.ones(pred.size()), 1.0),
-                           pred)
+        soft_max = nn.Softmax(dim=1)
+        single_dim_preds = soft_max(pred)
+        single_dim_preds = torch.argmax(single_dim_preds, dim=1).float()
+        single_dim_preds = torchvision.transforms.Resize((3000, 4000), interpolation=torchvision.transforms.InterpolationMode.BICUBIC)(single_dim_preds)
     print("=> Saving Pred")
     torchvision.utils.save_image(
-        pred, "testing/pred.png"
+        single_dim_preds, "testing/pred.png"
     )
     print("=> Pred Saved")
+    model.train()
 
 
 if __name__ == "__main__":
