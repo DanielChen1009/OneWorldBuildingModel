@@ -29,7 +29,7 @@ def main():
     # print("=> Mask Saved")
     train_transform = A.Compose(
         [
-            A.Resize(height=240, width=320, interpolation=interpol),
+            A.Resize(height=240, width=240, interpolation=interpol),
             A.Normalize(
                 mean=[0.0, 0.0, 0.0],
                 std=[1.0, 1.0, 1.0],
@@ -39,9 +39,9 @@ def main():
         ],
     )
 
-    mask = np.array(Image.open(f"data/test/test-label-img/{IMAGE_ID}_lab.png").convert("L"), dtype=np.float32)
-    image = np.array(Image.open(f"data/test/test-org-img/{IMAGE_ID}.jpg").convert("RGB"))
-
+    mask = np.array(Image.open(f"data/rescuenet/test/test-label-img/{IMAGE_ID}_lab.png").convert("L"), dtype=np.float32)
+    # image = np.array(Image.open(f"data/test/test-org-img/{IMAGE_ID}.jpg").convert("RGB"))
+    image = np.array(Image.open(f"analysis.png"))
     alb = train_transform(image=image, mask=mask)
     image = alb["image"]
     mask = alb["mask"]
@@ -66,17 +66,17 @@ def main():
     )
 
     model = AttentionUNET(in_channels=3, out_channels=5)
-    load_checkpoint(torch.load("checkpoint_CrossEnt.pth.tar")['state_dict'], model)
+    load_checkpoint(torch.load("checkpoint_FocalLoss.pth.tar")['state_dict'], model)
     model.eval()
     with torch.no_grad():
         pred = torch.sigmoid(model(image.unsqueeze(0)))
         soft_max = nn.Softmax(dim=1)
         single_dim_preds = soft_max(pred)
         single_dim_preds = torch.argmax(single_dim_preds, dim=1).float()
-        single_dim_preds = torchvision.transforms.Resize((3000, 4000), interpolation=torchvision.transforms.InterpolationMode.BICUBIC)(single_dim_preds)
+        # single_dim_preds = torchvision.transforms.Resize((320, 320), interpolation=torchvision.transforms.InterpolationMode.BICUBIC)(single_dim_preds)
     print("=> Saving Pred")
     torchvision.utils.save_image(
-        single_dim_preds, "testing/pred.png"
+        torch.div(single_dim_preds, 4), "testing/pred.png"
     )
     print("=> Pred Saved")
     model.train()

@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torchvision
 from dataset import DisasterDataset
+from dataset2 import XViewDataset
 from torch.utils.data import DataLoader
 import torch.nn as nn
 from torchmetrics.functional import dice
@@ -34,7 +35,10 @@ def get_loaders(
         image_dir=train_dir,
         mask_dir=train_maskdir,
         transform=train_transform,
-        limit=2000,
+        limit=2500
+        # start=400,
+        # end=2000,
+        # step=2
     )
 
     train_loader = DataLoader(
@@ -46,10 +50,13 @@ def get_loaders(
     )
 
     val_ds = DisasterDataset(
-        image_dir=val_dir,
-        mask_dir=val_maskdir,
+        image_dir=train_dir,
+        mask_dir=train_maskdir,
         transform=val_transform,
         limit=500
+        # start=0,
+        # end=400,
+        # step=2
     )
 
     val_loader = DataLoader(
@@ -84,12 +91,15 @@ def check_accuracy(loader, model, folder="saved_images/", device="cuda"):
             num_pixels += torch.numel(single_dim_preds)
             print(ind, end=' ')
             sum_score += dice(preds, y.int(), ignore_index=0).item()
-
+            x.to('cpu')
             single_dim_preds = single_dim_preds.to('cpu')
             y = y.to('cpu')
 
             torchvision.utils.save_image(
                 torch.div(single_dim_preds, 4).unsqueeze(1), f"{folder}pred_{ind}.png"
+            )
+            torchvision.utils.save_image(
+                x, f"{folder}orig_{ind}.png"
             )
             torchvision.utils.save_image(torch.div(y.unsqueeze(1), 4), f"{folder}{ind}.png")
             ind += 1
@@ -117,11 +127,11 @@ def save_predictions_as_imgs(
             preds = soft_max(preds)
             preds = torch.argmax(preds, dim=1)
             preds = torch.div(preds, 4)
+            torchvision.utils.save_image(
+                preds.unsqueeze(1), f"{folder}pred_{idx}.png"
+            )
+            torchvision.utils.save_image(torch.div(y.unsqueeze(1), 4), f"{folder}{idx}.png")
         print(idx, end=' ')
-        torchvision.utils.save_image(
-            preds.unsqueeze(1), f"{folder}pred_{idx}.png"
-        )
-        torchvision.utils.save_image(torch.div(y.unsqueeze(1), 4), f"{folder}{idx}.png")
     print()
     print("=> Images Saved")
 

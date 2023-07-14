@@ -30,19 +30,20 @@ if not torch.backends.mps.is_available():
 
 else:
     DEVICE = torch.device("mps")
-BATCH_SIZE = 16
+torch.set_flush_denormal(True)
+BATCH_SIZE = 8
+CLASSES = 5
 NUM_EPOCHS = 20
-NUM_WORKERS = 1
+NUM_WORKERS = 2
 IMAGE_HEIGHT = 240  # 3000 originally
 IMAGE_WIDTH = 320  # 4000 originally
 INTERPOLATION_TYPE = cv2.INTER_AREA
 PIN_MEMORY = True
 LOAD_MODEL = True
-TRAIN_IMG_DIR = "data/train/train-org-img"
-TRAIN_MASK_DIR = "data/train/train-label-img"
-VAL_IMG_DIR = "data/val/val-org-img"
-VAL_MASK_DIR = "data/val/val-label-img"
-LOSS_SUM = 0
+TRAIN_IMG_DIR = "data/rescuenet/train/train-org-img"
+TRAIN_MASK_DIR = "data/rescuenet/train/train-label-img"
+VAL_IMG_DIR = "data/rescuenet/val/val-org-img"
+VAL_MASK_DIR = "data/rescuenet/val/val-label-img"
 
 
 def train_fn(loader, model, optimizer, loss_fn, scaler, loss_sum):
@@ -65,8 +66,8 @@ def train_fn(loader, model, optimizer, loss_fn, scaler, loss_sum):
 
         # update tqdm loop
         loss_sum += loss.item()
-        loop.set_postfix(loss=(loss_sum/(batch_idx + 1)))
-    print(loss_sum / 125)
+        loop.set_postfix(loss=(loss_sum / (batch_idx + 1)))
+    print(loss_sum / 157)
 
 
 def main():
@@ -97,10 +98,18 @@ def main():
         ],
     )
 
-    model = AttentionUNET(in_channels=3, out_channels=5).to(device=DEVICE)
-    loss_fn = nn.CrossEntropyLoss().to(device=DEVICE)
+    model = AttentionUNET(in_channels=3, out_channels=CLASSES).to(device=DEVICE)
+    focal_loss = torch.hub.load(
+        'adeelh/pytorch-multi-class-focal-loss',
+        model='FocalLoss',
+        alpha=torch.tensor([1.0/13, 2.0/13, 2.0/13, 3.0/13, 5.0/13]),
+        gamma=2,
+        reduction='mean',
+        force_reload=False
+    )
+    loss_fn = focal_loss.to(device=DEVICE)
+    # loss_fn = nn.CrossEntropyLoss().to(device=DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    optimizer.load_state_dict(torch.load("checkpoint_CrossEnt.pth.tar", map_location='cpu')["optimizer"])
 
     train_loader, val_loader = get_loaders(
         TRAIN_IMG_DIR,
@@ -115,17 +124,13 @@ def main():
     )
 
     if LOAD_MODEL:
-        load_checkpoint(torch.load("checkpoint_CrossEnt.pth.tar", map_location='cpu')["state_dict"], model)
+        load_checkpoint(torch.load("checkpoint_FocalLoss.pth.tar", map_location='cpu')["state_dict"], model)
     model = model.to(device=DEVICE)
-    check_accuracy(val_loader, model, folder="saved_images/", device=DEVICE)
+    optimizer.load_state_dict(torch.load("checkpoint_FocalLoss.pth.tar", map_location='cpu')["optimizer"])
     scaler = torch.cuda.amp.GradScaler()
-
-    # save_predictions_as_imgs(
-    #     val_loader, model, folder="saved_images/", device=DEVICE
-    # )
+    # check_accuracy(val_loader, model, device=DEVICE)
 
     for epoch in range(NUM_EPOCHS):
-        print(optimizer.param_groups[-1]['lr'])
         train_fn(train_loader, model, optimizer, loss_fn, scaler, 0)
 
         # save model
@@ -133,15 +138,10 @@ def main():
             "state_dict": model.state_dict(),
             "optimizer": optimizer.state_dict(),
         }
-        save_checkpoint(checkpoint)
+        save_checkpoint(checkpoint, filename='checkpoint_XView.pth.tar')
 
         # check accuracy
         check_accuracy(val_loader, model, device=DEVICE)
-
-        # print some examples to a folder
-        # save_predictions_as_imgs(
-        #     val_loader, model, folder="saved_images/", device=DEVICE
-        # )
 
 
 if __name__ == "__main__":
